@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if [ -z "${SDEBUG}" ] ; then
+  set -x
+fi
+
 if [ -f ".logging-ns" ] ; then
   LOGGING_NS=$(cat .logging-ns)
 fi

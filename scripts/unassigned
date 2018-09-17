@@ -4,4 +4,4 @@ source env-prep
 
 pod=$1
 
-oc exec -c $LOGGING_ES $pod -- es_util --query=_cat/shards?h=index,shard,prirep,state,unassigned.reason| grep UNASSIGNED
+oc exec -c elasticsearch -n $LOGGING_NS $pod -- es_util --query=_cat/shards?h=index,shard,prirep,state,unassigned.reason| grep UNASSIGNED
