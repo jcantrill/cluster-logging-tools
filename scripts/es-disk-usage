@@ -1,0 +1,1 @@
+for p in $(oc get pods -o jsonpath={.items[*].metadata.name} -l component=es); do oc exec -c elasticsearch $p -- df -h | grep persistent; done
