@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [ -z "${SDEBUG}" ] ; then
+if [ -n "${SDEBUG}" ] ; then
   set -x
 fi
 
