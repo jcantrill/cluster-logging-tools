@@ -1,0 +1,13 @@
+#!/bin/bash -e
+#
+# This script pegs a specific index to a given node
+#
+#  peg-index-to-node $pod $index $es_node
+
+source env-prep
+
+pod=$1
+index=$2
+node=$3
+
+oc -n ${LOGGING_NS} -c elasticsearch exec ${pod} -- es_util --query="${index}/_settings" -XPUT -d "{\"index.routing.allocation.include._name\": \"${node}\"}"
