@@ -1,0 +1,32 @@
+#!/bin/bash -e
+
+# Checks the connectivity between the Elasticsearch nodes based on the published endpoints
+# of the cluster service
+
+source env-prep
+
+TIMEOUT=${1:-1} #1 sec
+
+endpoints=($(oc -n ${LOGGING_NS} get endpoints logging-es-cluster -o jsonpath={.subsets[*].addresses[*].ip}))
+pods=($(oc -n ${LOGGING_NS} get pods -l component=es -o jsonpath={.items[*].metadata.name}))
+if [ ${#endpoints[@]} -ne ${#pods[@]} ] ; then
+  echo "[WARN] The number of service endpoints: '${#endpoints[@]}' is different then the number of pods: '${#pods[@]}'"
+fi
+
+echo "Checking Elasticsearch pod connectivity on cluster ports..."
+for p in ${pods[@]}; do
+  echo "  Checking pod ${p}..." 
+  for e in ${endpoints[@]}; do
+    echo "    Checking endpoint ${e}..." 
+    result=$(timeout --preserve-status -s 2 ${TIMEOUT} \
+       oc -n ${LOGGING_NS} exec -c elasticsearch ${p} -- bash -c "exit | curl -sS -w 'connect: %{num_connects}' telnet://${e}:9300" || echo $?)
+
+    #130 = 128 + 2 (SIGINT)
+    #  7 = unable to route
+    if [ ${result} -ne 130 ] ; then   
+      echo "      Unable to connect! Result code: ${result}"
+    else
+      echo "      Connected"
+    fi
+  done
+done
