@@ -19,7 +19,7 @@ for p in ${pods[@]}; do
   for e in ${endpoints[@]}; do
     echo "    Checking endpoint ${e}..." 
     result=$(timeout --preserve-status -s 2 ${TIMEOUT} \
-       oc -n ${LOGGING_NS} exec -c elasticsearch ${p} -- bash -c "exit | curl -sS -w 'connect: %{num_connects}' telnet://${e}:9300" || echo $?)
+       oc -n ${LOGGING_NS} exec -c elasticsearch ${p} -- bash -c "exit | curl -sS telnet://${e}:9300" || echo $?)
 
     #130 = 128 + 2 (SIGINT)
     #  7 = unable to route
