@@ -7,14 +7,13 @@
 #   node  (Optional) An node Elasticsearch cluster which should be any one of the DC's.
 source env-prep
 
-pod=$1
-node=${2:-}
+node=${1:-}
 if [ -z "${node}" ] ; then
   node=$(oc -n $LOGGING_NS get dc -l component=es -o jsonpath={.items[0].metadata.name})
 fi
 
 read -r -d '' SCRIPT << "EOF"
-IFS=$'\n' unassigned=$(es_util --query=_cat/shards?h=index,shard,prirep,state,unassigned.reason | grep UNASSIGNED | grep NODE_LEFT)
+IFS=$'\n' unassigned=$(es_util --query=_cat/shards?h=index,shard,prirep,state,unassigned.reason | grep UNASSIGNED | grep -v INDEX_CREATED)
 regex="([-\.a-z0-9]*)\s+([0-9]+)\s+([r|p])"
 payload=''
 for line in $(echo "$unassigned"); do
@@ -34,14 +33,4 @@ echo $payload > $file
 es_util --query=_cluster/reroute?pretty -XPOST -d @$file
 EOF
 
-#  m = pattern.match(line)
-#  index = m.group(1).strip()
-#  shard = m.group(2)
-#  type = m.group(3)
-#  if type == 'r':
-#    if payload:
-#      payload = payload + ','
-#    payload = payload + '{"cancel":{"index":"%s","shard":%s,"node":"%s","allow_primary":"true"}}' % (index, shard, node)
-#payload = payload + ''.format(index, shard, node)
-#es_util --query=_cluster/reroute?pretty -XPOST -d ${payload}
 oc exec -t -c elasticsearch $pod -- bash -c "node=${node} ${SCRIPT}"
