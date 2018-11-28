@@ -2,4 +2,4 @@
 
 source env-prep
 
-oc exec -n $LOGGING_NS -c elasticsearch $1 -- indices
+oc exec -n $LOGGING_NS -c elasticsearch $pod -- indices
