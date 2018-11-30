@@ -1,0 +1,27 @@
+#!/bin/bash -e
+
+# Checks the connectivity between Kibana and the Elasticsearch cluster
+# of the cluster service
+
+source env-prep
+
+service=${1:-logging-es}
+pods=($(oc -n ${LOGGING_NS} get pods -l component=kibana -o jsonpath={.items[*].metadata.name}))
+attempts=${2:-5}
+
+echo "Checking connectivity from Kibana to Elasticsearch..."
+for p in ${pods[@]}; do
+  echo "  Checking pod ${p}..." 
+  echo "  total(s) namelookup(s) connect(s) appconnect(s) pretransfer(s) redirect(s) starttransfer(s)"
+  echo "  -------- ------------- ---------- ------------- -------------- ----------- ----------------"
+  for i in $(seq 1 $attempts) ; do
+    result=$(oc -n ${LOGGING_NS} exec -c kibana ${p} -- curl -sS -o /dev/null \
+        -w "%{time_connect}\t %{time_namelookup}\t %{time_connect}\t %{time_appconnect}\t %{time_pretransfer}\t %{time_redirect}\t %{time_starttransfer}" \
+         https://${service}:9200 \
+        --cacert /etc/kibana/keys/ca \
+        --cert /etc/kibana/keys/cert \
+        --key /etc/kibana/keys/key)
+    printf "%8s %14s %11s %13s %14s %11s %16s\n" $result
+  done
+done
+
