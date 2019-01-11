@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# This script allocates all unassigned primary shards to a given node using
+# the openshift binary.  The binary must be in the path and the user executing the script
+# must have access to logging project.  The inputs are:
+#
+# !!! WARNING !!!!
+# Using this command may lead to complete data loss.
+# Ref: https://www.elastic.co/guide/en/elasticsearch/reference/5.5/cluster-reroute.html
+#
+#   pod   An Elasticsearch pod name
+#   node  (Optional) An node Elasticsearch cluster which should be any one of the DC's.
+source env-prep
+
+node=${1:-}
+if [ -z "${node}" ] ; then
+  node=$(oc -n $LOGGING_NS get dc -l component=es -o jsonpath={.items[0].metadata.name})
+fi
+
+read -r -d '' SCRIPT << "EOF"
+IFS=$'\n' unassigned=$(es_util --query=_cat/shards?h=index,shard,prirep,state,unassigned.reason | grep 'p UNASSIGNED' | grep -v INDEX_CREATED)
+regex="([-\.a-z0-9]*)\s+([0-9]+)\s+([r|p])"
+payload=''
+for line in $(echo "$unassigned"); do
+  if [[ ${line} =~ ${regex} ]]; then
+    index=${BASH_REMATCH[1]}
+    shard=${BASH_REMATCH[2]}
+    if [ -n "${payload}" ] ; then
+      payload="${payload},"
+    fi
+    payload="${payload}{\"allocate_stale_primary\":{\"index\":\"$index\",\"shard\":$shard,\"node\":\"$node\",\"accept_data_loss\":\"true\"}}"
+  fi
+done
+payload="{\"commands\":[$payload]}"
+file=$(mktemp)
+echo $payload > $file
+cat $file
+es_util --query='_cluster/reroute?pretty' -XPOST -d @$file
+EOF
+
+oc exec -t -c elasticsearch $pod -- bash -c "node=${node} ${SCRIPT}"
+
