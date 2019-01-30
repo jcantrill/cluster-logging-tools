@@ -1,17 +1,21 @@
 #!/bin/bash
 
-pod=$1
+source env-prep
 echo "DCs"
 echo "----"
-oc get dc -n logging -o yaml | grep image: | sort | uniq
+oc get dc -n $LOGGING_NS -o yaml | grep image: | sort | uniq
 
 echo "DSs"
 echo "----"
-oc get ds -n logging -o yaml | grep image: | sort | uniq
+oc get ds -n $LOGGING_NS -o yaml | grep image: | sort | uniq
+
+echo "Cronjobs"
+echo "----"
+oc get cronjobs -n $LOGGING_NS -o yaml | grep image: | sort | uniq
 
 echo "Pods"
 echo "----"
-for p in $(oc get pods -n logging -o jsonpath={.items[*].metadata.name}); do
-  echo "$p : $(oc get pod $p -n logging -o yaml | grep image: | sort | uniq)"
+for p in $(oc get pods -n $LOGGING_NS -o jsonpath={.items[*].metadata.name}); do
+    echo "$p : $(oc get pod $p -n $LOGGING_NS -o yaml | grep image: | sort | uniq)"
 done
 
