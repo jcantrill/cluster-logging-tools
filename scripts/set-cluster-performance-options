@@ -1,0 +1,11 @@
+#!/bin/bash
+
+./set-cluster-setting indices.recovery.max_bytes_per_sec 150mb;
+
+./set-cluster-setting cluster.routing.allocation.cluster_concurrent_rebalance 50;
+
+./set-cluster-setting cluster.routing.allocation.node_initial_primaries_recoveries 15;
+
+./set-cluster-setting cluster.routing.allocation.node_concurrent_incoming_recoveries 50;
+./set-cluster-setting cluster.routing.allocation.node_concurrent_outgoing_recoveries 50;
+./set-cluster-setting cluster.routing.allocation.node_concurrent_recoveries 50;
