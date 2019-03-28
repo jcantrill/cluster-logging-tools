@@ -1,0 +1,37 @@
+#!/bin/bash
+
+## https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-update-settings.html
+
+source env-prep
+PERSIST=${PERSIST:-"transient"}
+
+commandusage() {
+    echo "Usage: ${0} key value"
+    echo "Example: ${0} cluster.routing.allocation.node_concurrent_incoming_recoveries 50"
+    exit 1 # error
+}
+
+settingkey=${1:-}
+if [ -z "${settingkey}" ] ; then
+    commandusage
+fi
+
+settingvalue=${2:-}
+if [ -z "${settingvalue}" ] ; then
+    commandusage
+fi
+
+# Find requests to default the value
+if [ "${settingvalue}" == "default" ] \
+   || [ "${settingvalue}" == "null" ] \
+   || [ "${settingvalue}" == "none" ] \
+   || [ "${settingvalue}" == "None" ] ; then
+    settingvalue="null"
+else
+    # quote the value
+    settingvalue="\"${settingvalue}\""
+fi
+
+echo ${settingkey} ${settingvalue}
+oc exec -n $LOGGING_NS -c elasticsearch $pod -- es_util --query=_cluster/settings -XPUT -d "{\"${PERSIST}\":{\"${settingkey}\":${settingvalue}}}"
+echo # extra new line because es_util doesn't add one
