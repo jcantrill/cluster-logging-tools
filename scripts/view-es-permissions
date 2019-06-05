@@ -6,9 +6,9 @@
 
 source env-prep
 
-roles=$(oc exec -c elasticsearch $pod -- es_acl get --doc=roles)
-mappings=$(oc exec -c elasticsearch $pod -- es_acl get --doc=rolesmapping)
-actions=$(oc exec -c elasticsearch $pod -- es_acl get --doc=actiongroups)
+roles=$(oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_acl get --doc=roles)
+mappings=$(oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_acl get --doc=rolesmapping)
+actions=$(oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_acl get --doc=actiongroups)
 
 read -r -d '' SCRIPT << "EOF"
 import json,sets,sys
