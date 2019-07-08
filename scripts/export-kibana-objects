@@ -1,0 +1,41 @@
+#!/bin/bash
+
+set -eo pipefail
+
+function usage() {
+cat << EOF
+
+Exports a given user's kibana objects from their unique
+kibana index and write the results to STDOUT as an Elasticsearch
+search response.
+
+usage:
+  $0 <username> [objects]
+
+  username   the user's name or '\$\$kibana' if it should retrieve
+             the '.kibana' objects
+  objects    a comma delimited list of objects (Defaults: visualization,dashboard,search)
+
+EOF
+exit "1"
+}
+
+source env-prep
+
+if [ -z "${1:-}" ] ; then
+    usage
+fi
+
+
+pwd=$(dirname $0)
+username=$1
+OBJECTS=${2:-visualization,dashboard,search}
+kibindex=$(${pwd}/kibana-index-name ${username})
+
+if [ "$username" == '$$kibana' ] ; then
+    kibindex=.kibana
+fi
+
+query="${kibindex}/${OBJECTS}/_search?pretty"
+
+oc -n ${LOGGING_NS} exec -c elasticsearch $pod -- es_util --query=${query}
