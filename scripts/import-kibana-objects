@@ -1,0 +1,65 @@
+#!/bin/bash
+
+set -eo pipefail
+
+function usage() {
+cat << EOF
+
+Import kibana objects to the kibana index found in the first entry of
+a search response exported by 'export-kibana-objects'. NOTE: This script
+overwrites/updates any objects of the same type and id
+
+usage:
+  $0 <objects_json>
+
+  objects_json   A search response JSON from the export script
+
+EOF
+exit "1"
+}
+
+source env-prep
+
+if [ -z "${1:-}" ] ; then
+    usage
+fi
+
+
+pwd=$(dirname $0)
+file=$1
+kibindex=$(
+        cat "$file" | python -c '
+import sys
+import json
+obj = json.load(sys.stdin)
+if obj["hits"]["total"] == 0:
+    sys.stdout.write("")
+sys.stdout.write(obj["hits"]["hits"][0]["_index"])
+'
+)
+query="${kibindex}/_bulk"
+response=$({
+        cat "$file" | python -c '
+import sys
+import json
+obj = json.load(sys.stdin)
+for doc in obj["hits"]["hits"]:
+  hdr = {"index":{"_type":doc["_type"],"_id":doc["_id"]}}
+  json.dump(hdr, sys.stdout)
+  sys.stdout.write("\n")
+  json.dump(doc["_source"], sys.stdout)
+  sys.stdout.write("\n")
+'
+} | oc -n ${LOGGING_NS} exec -i -c elasticsearch $pod -- es_util --query="${query}" -H "Content-type: application/json" -XPOST --data-binary @-
+)
+
+echo $response | python -c '
+import sys
+import json
+obj = json.load(sys.stdin)
+if obj["errors"]:
+    sys.stdout.write(json.dumps(obj, indent=4))
+    sys.stdout.write("\n")
+else:
+    sys.stdout.write("Success")
+'
