@@ -6,7 +6,7 @@
 
 source env-prep
 
-oc exec -c elasticsearch -n $LOGGING_NS $pod -- es_util --query=_mapping?pretty&filter_path=**.mappings.*.properties \
+oc exec -c elasticsearch -n $LOGGING_NS $pod -- es_util --query='_mapping?pretty&filter_path=**.mappings.*.properties' \
   | jq '.[].mappings[].properties | keys' \
   | jq .[] \
   | egrep  -e "\."
