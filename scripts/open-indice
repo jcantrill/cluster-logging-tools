@@ -1,0 +1,8 @@
+#!/bin/bash
+# This script opens the given index
+# https://www.elastic.co/guide/en/elasticsearch/reference/5.6/indices-open-close.html
+source env-prep
+
+index=${1}
+
+oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_util --query=$index/_open
