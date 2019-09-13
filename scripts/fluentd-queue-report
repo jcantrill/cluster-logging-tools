@@ -1,0 +1,181 @@
+#!/bin/bash
+set -euo pipefail
+
+source env-prep
+
+usage() {
+    cat <<EOF
+Usage: [PER_POD=true] $0
+Using PER_POD=true will list the fluentd stats for each fluentd pod
+
+This command will look at the fluentd buffer queue files on each fluentd
+pod, sum the sizes of those files, find the oldest and newest, in order
+to find the per-pod and total aggregate fluentd queue size, which is
+the amount of data read by fluentd and pending to be sent to
+Elasticsearch.
+
+green - oldest file is less than 1 minute old
+yellow - oldest file is less than 5 minutes old
+red - oldest file is more than 5 minutes old
+These numbers are rather arbitrary, so may require some adjustment
+for your environment.
+
+If you see a lot of pods in the red state, or you see the average
+and total size increasing, use PER_POD=true to see if there are
+some problematic pods.  You may need to investigate:
+
+    oc exec fluentd-xxx -- logs
+    oc exec fluentd-xxx -- ls -lrtFi /var/lib/fluentd
+    oc exec fluentd-xxx -- ls -lrtFi /var/lib/fluentd/es-retry
+    oc exec fluentd-xxx -- ls -lrtFi /var/lib/fluentd/buffer-output-es-config
+
+and possibly restart those fluentd pods (e.g. oc delete pod fluentd-xxx)
+
+output looks something like this with PER_POD=true - without, only SUMMARY
+will be printed:
+
+STATUS OLDEST NEWEST       SIZE POD                   NODETYPE NODE
+green      20      1          0 logging-fluentd-xxxxx compute  ip-xxx.compute.internal
+yellow    100      5       5432 logging-fluentd-yyyyy infra    ip-yyy.compute.internal
+red      1234      9   11115920 logging-fluentd-zzzzz master   ip-zzz.compute.internal
+...
+
+SUMMARY
+
+TIME                       PODS RED YELLOW GREEN OLDEST TOTAL_SIZE    LARGEST    AVERAGE
+2019-09-13T02:35:42+0000     33   4      9    20   3457  333748745    9833954   10113598
+
+OLDEST  buffer file was on pod logging-fluentd-zzzzz node master  ip-zzz.compute.internal
+LARGEST buffer file was on pod logging-fluentd-qqqqq node compute ip-qqq.compute.internal
+
+EOF
+}
+
+if [ -n "${1:-}" ] ; then
+    usage
+    exit 0
+fi
+
+# argument is how many seconds old the oldest
+# buffer file is
+color() {
+    if [ $1 -lt 60 ] ; then
+        echo green
+    elif [ $1 -lt 300 ] ; then
+        echo yellow
+    else
+        echo red
+    fi
+}
+
+podline() {
+    printf "%-6s %6.6s %6.6s %10.10s %-21s %-8s %s\n" "$@"
+}
+
+podheader() {
+    podline STATUS OLDEST NEWEST SIZE POD NODETYPE NODE
+}
+
+num=0
+numgreen=0
+numyellow=0
+numred=0
+ns=${LOGGING_NS:-openshift-logging}
+total=0
+min=
+max=
+oldest=
+newest=
+if [ "${PER_POD:-false}" = true ] ; then
+    podheader
+fi
+if ! fpods=$(oc get pod -n $ns -l component=fluentd -o jsonpath='{.items[*].metadata.name}') || test -z "$fpods"; then
+    echo Error: no fluentd pods found
+    exit 0
+fi
+for pod in $fpods; do
+    #echo now is $(date) $(date +%s) >> debug 2>&1
+    #oc exec -n $ns $pod -- ls -alrt --time-style=+%s /var/lib/fluentd/ >> debug 2>&1
+    if ! node=$(oc get pod -n $ns $pod -o jsonpath='{.spec.nodeName}') || test -z "$node" ; then
+        Warning: could not get node for $pod
+        node=unknown-$pod
+    fi
+    nodetype=$( oc get node $node -o jsonpath='{.metadata.labels.type}' ) || :
+    nodetype=${nodetype:-unknown}
+#    output=$( oc exec -n $ns $pod -- ls -alrt --time-style=+%s /var/lib/fluentd/ | awk '
+    output=$( oc exec -n $ns $pod -- find /var/lib/fluentd -type f -name \*.log -printf "%s %T@" | awk '
+BEGIN {sum = 0; oldestts = -1; newestts = 0}
+{
+    if (oldestts == -1 || $2 < oldestts) {oldestts = $2}
+    if ($2 > newestts) {newestts = $2}
+    sum = sum + $1
+}
+END {print sum, int(oldestts), int(newestts)}' ) || :
+    now=$( date +%s )
+    sum=$( echo $output | awk '{print $1}' )
+    sum=${sum:-0}
+    oldestts=$( echo $output | awk '{print $2}' )
+    newestts=$( echo $output | awk '{print $3}' )
+    if [ -z "${oldestts:-}" -o "${oldestts:-'-1'}" = "-1" ] ; then
+        oldestperpod=0
+    else
+        oldestperpod=$(expr $now - $oldestts) || :
+    fi
+    if [ -z "${newestts:-}" -o "${newestts:-0}" = "0" ] ; then
+        newestperpod=0
+    else
+        newestperpod=$(expr $now - $newestts) || :
+    fi
+    total=$( expr $total + $sum ) || :
+    if [ -z "${min:-}" -o $sum -lt "${min:-0}" ] ; then
+        min=$sum
+        minpod=$pod
+        minnode=$node
+        minnodetype=$nodetype
+    fi
+    if [ -z "${max:-}" -o $sum -gt "${max:-0}" ] ; then
+        max=$sum
+        maxpod=$pod
+        maxnode=$node
+        maxnodetype=$nodetype
+    fi
+    if [ -z "${oldest:-}" -o $oldestperpod -gt "${oldest:-0}" ] ; then
+        oldest=$oldestperpod
+        oldestpod=$pod
+        oldestnode=$node
+        oldestnodetype=$nodetype
+    fi
+    if [ -z "${newest:-}" -o $newestperpod -lt "${newest:-0}" ] ; then
+        newest=$newestperpod
+        newestpod=$pod
+        newestnode=$node
+        newestnodetype=$nodetype
+    fi
+    podcolor=$( color $oldestperpod )
+    case $podcolor in
+    green)  numgreen=$(expr $numgreen + 1) ;;
+    yellow) numyellow=$(expr $numyellow + 1) ;;
+    red)    numred=$(expr $numred + 1) ;;
+    esac
+
+    if [ "${PER_POD:-false}" = true ] ; then
+        podline $podcolor $oldestperpod $newestperpod $sum $pod $nodetype $node
+    fi
+    num=$( expr $num + 1 )
+done
+echo ""
+echo SUMMARY
+echo ""
+summary() {
+    printf "%-26s %4.4s %3.3s %6.6s %5.5s %6.6s %10.10s %10.10s %10.10s\n" "$@"
+}
+summary TIME PODS RED YELLOW GREEN OLDEST TOTAL_SIZE LARGEST AVERAGE
+summary $(date -Isec) $num $numred $numyellow $numgreen $oldest $total $max $(expr $total / $num)
+
+echo ""
+
+detail() {
+    printf "%-7s buffer file was on %-3s %-21s %-4s %-7s %s\n" "$@"
+}
+detail OLDEST pod $oldestpod node $oldestnodetype $oldestnode
+detail LARGEST pod $maxpod node $maxnodetype $maxnode
