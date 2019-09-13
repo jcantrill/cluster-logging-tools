@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [ -n "${SDEBUG}" ] ; then
+if [ -n "${SDEBUG:-}" ] ; then
   set -x
 fi
 
@@ -9,6 +9,6 @@ if [ -f ".logging-ns" ] ; then
 fi
 
 export LOGGING_NS=${LOGGING_NS:-openshift-logging}
-if [ -z "$pod" ] ; then
+if [ -z "${pod:-}" ] ; then
   pod=$(oc -n $LOGGING_NS get pod -l component=es -o jsonpath={.items[0].metadata.name})
 fi
