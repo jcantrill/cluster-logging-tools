@@ -76,6 +76,15 @@ podheader() {
     podline STATUS OLDEST NEWEST SIZE POD NODETYPE NODE
 }
 
+nodetype() {
+    local node=$1
+    local nodetype=$( oc get node $node -o jsonpath='{.metadata.labels.type}' ) || :
+    if [ -z "$nodetype" ] ; then
+	nodetype=$( oc get node $node -o yaml | awk -F'[/:]' '/node-role.kubernetes.io/ {print $2}' ) || :
+    fi
+    return ${nodetype:-unknown}
+}
+
 num=0
 numgreen=0
 numyellow=0
@@ -97,11 +106,10 @@ for pod in $fpods; do
     #echo now is $(date) $(date +%s) >> debug 2>&1
     #oc exec -n $ns $pod -- ls -alrt --time-style=+%s /var/lib/fluentd/ >> debug 2>&1
     if ! node=$(oc get pod -n $ns $pod -o jsonpath='{.spec.nodeName}') || test -z "$node" ; then
-        Warning: could not get node for $pod
+        #echo Warning: could not get node for $pod
         node=unknown-$pod
     fi
-    nodetype=$( oc get node $node -o jsonpath='{.metadata.labels.type}' ) || :
-    nodetype=${nodetype:-unknown}
+    nodetype=$( nodetype $node )
 #    output=$( oc exec -n $ns $pod -- ls -alrt --time-style=+%s /var/lib/fluentd/ | awk '
     output=$( oc exec -n $ns $pod -- find /var/lib/fluentd -type f -name \*.log -printf "%s %T@" | awk '
 BEGIN {sum = 0; oldestts = -1; newestts = 0}
