@@ -6,23 +6,69 @@ source env-prep
 
 DEBUG=${DEBUG:-false}
 ns=${LOGGING_NS:-openshift-logging}
-FLUENTD_DS=${FLUENTD_DS:-ds/fluentd}
 INTERVAL=${INTERVAL:-30}
-if ! oc -n $ns get $FLUENTD_DS > /dev/null 2>&1 ; then
-    FLUENTD_DS=ds/logging-fluentd
+SORTCOLUMN=${SORTCOLUMN:-1}
+SORTFLAGS="-n"
+if [ $SORTCOLUMN -gt 6 ] ; then
+    SORTFLAGS=""
+fi
+
+usage() {
+    cat <<EOF
+Usage: [INTERVAL=$INTERVAL] [PER_NODE=true [SORTCOLUMN=$SORTCOLUMN]] $0
+
+INTERVAL is how long to collect logs from each node/pod to compute the
+rate.  The value is in seconds.  The default is 30 seconds.
+
+Using PER_NODE=true will list the log rates per node.  Using
+SORTCOLUMN will sort the output by the specified column.  The default
+is $SORTCOLUMN which is the total number of bytes logged in the given
+INTERVAL.
+
+For example:
+
+Per 30 second interval:
+      TOTAL   TOTAL    JOURNAL JOURNAL       FILE    FILE          
+      BYTES    RECS      BYTES    RECS      BYTES    RECS NODETYPE NODE
+      14919      14      14355       8        564       6 compute  10.0.76.201
+      21611      16      21038      13        573       3 infra    10.0.77.63
+
+This means that node 10.0.76.201 logged 14919 bytes and 14 records
+during the 30 second interval.  14355 bytes and 8 records were from
+the journal, and 564 bytes and 6 recs were from container logs.
+
+The summary output looks like this:
+
+total nodes: 5
+average record size in bytes the past 30 seconds: 903
+                              TOTAL     TOTAL   JOURNAL   JOURNAL      FILE      FILE
+                TIMESTAMP BYTES/SEC  RECS/SEC BYTES/SEC  RECS/SEC BYTES/SEC  RECS/SEC
+ 2019-10-23T22:17:14+0000      3559         5      2985         1       574         3
+
+This means that 3559 bytes per second and 5 records per second were
+logged from all 5 nodes during the interval.  The average record size
+in bytes is calculated from the data gathered in the interval.
+
+EOF
+}
+
+if [ -n "${1:-}" ] ; then
+    usage
+    exit 0
 fi
 
 if [ "${DEBUG:-false}" = true ] ; then
     set -x
 fi
 
-podline() {
-    printf "%11.11s %7.7s %10.10s %7.7s %10.10s %7.7s %-21s %-8s %s\n" "$@"
+nodeline() {
+    printf "%11.11s %7.7s %10.10s %7.7s %10.10s %7.7s %-8s %s\n" "$@"
 }
 
-podheader() {
-    podline TOTAL TOTAL JOURNAL JOURNAL FILE FILE "" "" ""
-    podline BYTES RECS BYTES RECS BYTES RECS POD NODETYPE NODE
+nodeheader() {
+    echo Per $INTERVAL second interval:
+    nodeline TOTAL TOTAL JOURNAL JOURNAL FILE  FILE "" ""
+    nodeline BYTES RECS  BYTES   RECS    BYTES RECS NODETYPE NODE
 }
 
 totline() {
@@ -38,89 +84,79 @@ nodetype() {
     local node=$1
     local nodetype=$( oc get node $node -o jsonpath='{.metadata.labels.type}' ) || :
     if [ -z "$nodetype" ] ; then
-	nodetype=$( oc get node $node -o yaml | awk -F'[/:]' '/node-role.kubernetes.io/ {print $2}' ) || :
+	nodetype=$( oc get node $node -o yaml | awk -F'[/:]' '/^[ 	]+node-role.kubernetes.io/ {print $2}' ) || :
     fi
     echo ${nodetype:-unknown}
 }
 
 gather_node_stats() {
-    fpods=$( oc -n $ns get pod -l component=fluentd -o jsonpath='{.items[*].metadata.name}' )
-    for pod in $fpods ; do
-	oc -n $ns exec $pod -- bash -c 'journalctl -m -a -o export -S "'$INTERVAL' seconds ago" | awk "/^\$/ {recs += 1}; {bytes += length(\$0)}; END {print recs,bytes}"' > $workdir/$pod.journal.out 2> $workdir/$pod.journal.err &
-	oc -n $ns exec $pod -- bash -c 'cat /var/log/containers/*.log | wc' > $workdir/$pod.file.out 2> $workdir/$pod.file.err &
-    done
+    local pod
+    local podns
+    local node
+
+    oc -n $ns get pods -l component=fluentd --template '{{range .items}} {{print .metadata.name " " .spec.nodeName "\n"}} {{end}}' > $workdir/f-pod-node 2>&1
+    while read pod node ; do
+	oc -n $ns exec $pod -- bash -c 'journalctl -m -a -o export -S "'$INTERVAL' seconds ago" | awk "/^\$/ {recs += 1}; {bytes += length(\$0)}; END {print recs,bytes}"' > $workdir/${ns}_${pod}_${node}_journal.out 2> $workdir/${pod}_${node}_journal.err &
+    done < $workdir/f-pod-node
+
+    oc get pods --all-namespaces --template '{{range .items}} {{print .metadata.namespace " " .metadata.name " " .spec.nodeName "\n"}} {{end}}' > $workdir/ns-pod-node 2>&1
+    while read podns pod node ; do
+	oc -n $podns logs --all-containers --pod-running-timeout=1s --since=${INTERVAL}s $pod | wc > $workdir/${podns}_${pod}_${node}_file.out 2> $workdir/${podns}_${pod}_${node}_file.err &
+    done < $workdir/ns-pod-node
     wait
 
-    if [ "${PER_POD:-false}" = true ] ; then
-	podheader
-    fi
     totjrecs=0; totjbytes=0; totfrecs=0; totfbytes=0; totrecs=0; totbytes=0
-    for pod in $fpods ; do
-	if ! node=$(oc get pod -n $ns $pod -o jsonpath='{.spec.nodeName}') || test -z "$node" ; then
-            #echo Warning: could not get node for $pod
-            node=unknown-$pod
-            nodetype=unknown
+    declare -A nodebytes noderecs nodejbytes nodejrecs nodefbytes nodefrecs nodetypes
+    for file in $workdir/*.out ; do
+	local basename=$( basename $file .out )
+	read podns pod node ftype <<<$( echo $basename | sed 's/_/ /g' )
+        local nodetype=$( nodetype $node )
+	nodetypes[$node]=$nodetype
+	local recs=0 words=0 bytes=0
+	if [ "$ftype" = file ] ; then
+	    if [ -s $file ] ; then
+		read recs words bytes < $file
+	    fi
+	    nodefbytes[$node]=$(( ${nodefbytes[$node]:-0} + bytes )) || :
+	    nodefrecs[$node]=$(( ${nodefrecs[$node]:-0} + recs )) || :
+	    totfbytes=$(( totfbytes + bytes )) || :
+	    totfrecs=$(( totfrecs + recs )) || :
 	else
-            nodetype=$( nodetype $node )
+	    if [ -s $file ] ; then
+		read recs bytes < $file
+	    fi
+	    nodejbytes[$node]=$(( ${nodejbytes[$node]:-0} + bytes )) || :
+	    nodejrecs[$node]=$(( ${nodejrecs[$node]:-0} + recs )) || :
+	    totjbytes=$(( totjbytes + bytes )) || :
+	    totjrecs=$(( totjrecs + recs )) || :
 	fi
-
-	jrecs=err; jbytes=err; frecs=err; fbytes=err
-	if [ -s $workdir/$pod.journal.out ] ; then
-            read jrecs jbytes < $workdir/$pod.journal.out
-	    totjrecs=$(( totjrecs + jrecs ))
-	    totjbytes=$(( totjbytes + jbytes ))
-	    totrecs=$(( totrecs + jrecs ))
-	    totbytes=$(( totbytes + jbytes ))
-	    bothbytes=$jbytes
-	    bothrecs=$jrecs
-	fi
-	if [ -s $workdir/$pod.file.out ] ; then
-            read frecs fwords fbytes < $workdir/$pod.file.out
-	    totfrecs=$(( totfrecs + frecs ))
-	    totfbytes=$(( totfbytes + fbytes ))
-	    totrecs=$(( totrecs + frecs ))
-	    totbytes=$(( totbytes + fbytes ))
-	    bothbytes=$( expr ${bothbytes:-0} + $fbytes )
-	    bothrecs=$( expr ${bothrecs:-0} + $frecs )
-	fi
-	totpods=$(( totpods + 1 ))
-	if [ "$jrecs" = err ] ; then
-	    unavailpods=$(( unavailpods + 1 ))
-	fi
-	if [ "${PER_POD:-false}" = true ] ; then
-	    podline ${bothbytes:-err} ${bothrecs:-err} $jbytes $jrecs $fbytes $frecs $pod $nodetype $node
-	fi
+	nodebytes[$node]=$(( ${nodebytes[$node]:-0} + bytes )) || :
+	noderecs[$node]=$(( ${noderecs[$node]:-0} + recs )) || :
+	totbytes=$(( totbytes + bytes )) || :
+	totrecs=$(( totrecs + recs )) || :
     done
+    if [ "${PER_NODE:-false}" = true ] ; then
+	nodeheader
+	for node in ${!nodebytes[@]} ; do
+	    nodeline ${nodebytes[$node]} ${noderecs[$node]} ${nodejbytes[$node]:-0} ${nodejrecs[$node]:-0} ${nodefbytes[$node]} ${nodefrecs[$node]} ${nodetypes[$node]} $node
+	done | sort -b $SORTFLAGS -k $SORTCOLUMN
+    fi
+    totnodes=${#nodebytes[@]}
 }
 
 workdir=$( mktemp -d )
 trap "rm -rf ${workdir:-/var/tmp/nosuchdir}" EXIT
 
-lastfrecs=0; lastfbytes=0; totrecs=0; totbytes=0
-
-totpods=0; unavailpods=0
-
 gather_node_stats
+totbyterate=$(( totbytes / INTERVAL ))
+totrecrate=$(( totrecs / INTERVAL ))
+avgrecsize=$(( totbytes / totrecs ))
+jbyterate=$(( totjbytes / INTERVAL ))
+jrecrate=$(( totjrecs / INTERVAL ))
+fbyterate=$(( totfbytes / INTERVAL ))
+frecrate=$(( totfrecs / INTERVAL ))
 echo ""
-lastfbytes=$totfbytes
-lastfrecs=$totfrecs
-sleep $INTERVAL
-while true ; do
-    totpods=0; unavailpods=0
-    gather_node_stats
-    fbytes=$(( totfbytes - lastfbytes ))
-    frecs=$(( totfrecs - lastfrecs ))
-    lastfbytes=$totfbytes
-    lastfrecs=$totfrecs
-    totbyterate=$(( (totjbytes + fbytes) / INTERVAL ))
-    totrecrate=$(( (totjrecs + frecs) / INTERVAL ))
-    jbyterate=$(( totjbytes / INTERVAL ))
-    jrecrate=$(( totjrecs / INTERVAL ))
-    fbyterate=$(( fbytes / INTERVAL ))
-    frecrate=$(( frecs / INTERVAL ))
-    echo ""
-    echo total pods: $totpods  unavailable pods: $unavailpods
-    totheader
-    totline $(date -Isec) $totbyterate $totrecrate $jbyterate $jrecrate $fbyterate $frecrate
-    sleep $INTERVAL
-done
+echo total nodes: $totnodes
+echo average record size in bytes in the past $INTERVAL seconds: $avgrecsize
+totheader
+totline $(date -Isec) $totbyterate $totrecrate $jbyterate $jrecrate $fbyterate $frecrate
