@@ -69,7 +69,7 @@ color() {
 }
 
 podline() {
-    printf "%-6s %6.6s %6.6s %10.10s %-21s %-8s %s\n" "$@"
+    printf "%-6s %6.6s %6.6s %10.10s %-21s %-13s %s\n" "$@"
 }
 
 podheader() {
@@ -82,7 +82,7 @@ nodetype() {
     if [ -z "$nodetype" ] ; then
 	nodetype=$( oc get node $node -o yaml | awk -F'[/:]' '/node-role.kubernetes.io/ {print $2}' ) || :
     fi
-    return ${nodetype:-unknown}
+    echo ${nodetype:-unknown}
 }
 
 num=0
