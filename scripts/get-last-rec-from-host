@@ -1,0 +1,68 @@
+#!/bin/sh
+set -euo pipefail
+
+source env-prep
+
+use_aggregate_search() {
+    local starttime=${1:-"3h"}
+    local hostquery=$( mktemp )
+    cat > $hostquery <<EOF
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "filter": {
+          "range": {
+            "@timestamp": { "gte": "now-${starttime}" }
+         }
+      }
+    }
+  },
+  "aggs": {
+    "hosts": {
+      "terms": {
+        "size": 40,
+        "field": "hostname",
+         "order": [
+             { "last_update": "desc" },
+             { "_term": "asc" }
+          ]
+      },
+      "aggs": {
+        "last_update": {
+          "max": { "field": "@timestamp" }
+        }
+     }
+    }
+  }
+}
+EOF
+    trap "rm -f $hostquery" RETURN
+    local hostqueryres=$( mktemp )
+    cat $hostquery | \
+        oc exec -c elasticsearch -i $pod -- es_util --query=.operations.*,project.*/_search -X POST --data-binary @- > $hostqueryres
+    trap "rm -f $hostquery $hostqueryres" RETURN
+    cat $hostqueryres | python -c 'import sys,json
+from datetime import datetime,timedelta
+from calendar import timegm
+warnthresh = timedelta(minutes=int(sys.argv[1]))
+errthresh = timedelta(minutes=int(sys.argv[2]))
+now = datetime.utcnow()
+hsh = json.load(sys.stdin)
+for bucket in hsh["aggregations"]["hosts"]["buckets"]:
+  recs = bucket["doc_count"]
+  hn = bucket["key"]
+  tsflt = bucket["last_update"]["value"]
+  ts = datetime.utcfromtimestamp(tsflt/1000.0)
+  if now - ts > errthresh:
+    status = "red   "
+  elif now - ts > warnthresh:
+    status = "yellow"
+  else:
+    status = "green "
+  print "{}: {} diff {} records {}".format(status, hn, now-ts, recs)
+print "Date: {} time_t: {} Number of hosts: {}".format(now.isoformat(), timegm(now.timetuple()), len(hsh["aggregations"]["hosts"]["buckets"]))
+' 10 20
+}
+
+use_aggregate_search ${OLDEST:-3h}
