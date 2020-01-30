@@ -16,5 +16,6 @@ if [ -z "${pod:-}" ] ; then
   if [ "$?" != "0" ] ; then
     echo "Running 'oc -n $LOGGING_NS get pod -l component=elasticsearch' failed, possibly due to the" >&2
     echo "namespace being wrong. Look into 'env-prep' file to see how to override that." >&2
+    echo "(If this is a V3 cluster, run 'git checkout release-3.x' before doing anything else.)" >&2
   fi
 fi
