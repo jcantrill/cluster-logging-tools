@@ -1,0 +1,37 @@
+#!/bin/bash
+
+## https://www.elastic.co/guide/en/elasticsearch/reference/5.6/indices-templates.html
+
+source env-prep
+
+commandusage() {
+    echo "Usage: ${0}  index_patterns  number_of_shards  index_template_name  [order]"
+    echo "Example: ${0} project.* 7 my_template"
+    echo "Example: ${0} project.* 7 my_template 50"
+    exit 1 # error
+}
+
+check=${1:-}
+if [ -z "${check}" ] ; then
+    commandusage
+fi
+
+check=${2:-}
+if [ -z "${check}" ] ; then
+    commandusage
+fi
+
+check=${3:-}
+if [ -z "${check}" ] ; then
+    commandusage
+fi
+
+order=${4:100}
+
+oc exec -n $LOGGING_NS -c elasticsearch $pod -- es_util --query=_template/${3} -XPUT -d \
+"{\"template\":\"${1}\",\"order\": ${4},\"settings\":\"{\"number_of_shards\":${2} }}"
+echo # extra new line because es_util doesn't add one
+
+# Print the template for the user to check if it made it into ES and looks ok
+oc exec -n $LOGGING_NS -c elasticsearch $pod -- es_util --query=_template/${3} -XGET
+echo # extra new line because es_util doesn't add one
