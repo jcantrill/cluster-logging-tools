@@ -1,3 +1,21 @@
-#!/bin/bash
-hash=$(printf "%s" $1 | sha1sum | awk '{print $1}')
-echo ".kibana.$hash"
+#!/bin/env python
+# -*- coding: utf-8 -*-
+
+'''
+ OD toUserIndexName() 
+ originalKibanaIndex+"_"+tenant.hashCode()+"_"+tenant.toLowerCase().replaceAll("[^a-z0-9]+",EMPTY_STRING);
+'''
+
+import sys,re
+
+username = sys.argv[1]
+def java_string_hashcode(s):
+    """https://stackoverflow.com/questions/22845913/function-to-replicate-the-output-of-java-lang-string-hashcode-in-python-and-no"""
+    """Mimic Java's hashCode in python 2"""
+    h = 0
+    for c in list(s.encode('utf8')):
+        h = int((((31 * h + c) ^ 0x80000000) & 0xFFFFFFFF) - 0x80000000)
+    return h
+
+hashCode = java_string_hashcode(username)
+print(".kibana_" + str(hashCode) + "_" + re.sub("[^a-z0-9]","",username.lower()))
