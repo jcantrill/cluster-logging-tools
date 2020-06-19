@@ -11,13 +11,13 @@ mappings=$(oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_acl get --doc=role
 actions=$(oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_acl get --doc=actiongroups)
 
 read -r -d '' SCRIPT << "EOF"
-import json,sets,sys
+import json,sys
 
 roles=json.loads(sys.argv[1])
 mappings=json.loads(sys.argv[2])
 actions=json.loads(sys.argv[3])
 
-def permissions(name,perms=sets.Set()):
+def permissions(name,perms=set()):
   if name in actions:
       for a in actions[name]:
           if a in actions and a not in perms:
@@ -30,31 +30,34 @@ def permissions(name,perms=sets.Set()):
 
 def printPermissions(perms):
   for perm in perms:
-    roleActions = sets.Set()
+    roleActions = set()
     permissions(perm, roleActions)
     for action in sorted(roleActions):
-        print "        |-" + action
+        print("        |-" + action)
 
 for role in mappings:
-    for mtype, users in mappings[role].iteritems():
-       if 'users' == mtype:
+    for mtype, users in mappings[role].items():
+       if mtype in ['users','backendroles']:
          for user in users:
-             print ""
-             print user
+             print("")
+             print(user)
              if role in roles:
                perms = roles[role]
-               for ptype, pset in perms.iteritems():
+               for ptype, pset in perms.items():
                    if 'cluster' == ptype:
-                       print "  |--- cluster:"
+                       print("  |--- cluster:")
                        printPermissions(pset)
                    if 'indices' == ptype:
-                       print "  |- indices:"
-                       for index, docperms in pset.iteritems():
-                           for doc, perms in docperms.iteritems():
-                               print "    |-" + index + "/" + doc
-                               printPermissions(perms)
+                       print("  |- indices:")
+                       for index, docperms in pset.items():
+                           for doc, perms in docperms.items():
+                               print("    |-" + index + "/" + doc)
+                               if doc == '_dls_':
+                                 print("        |-" + perms)
+                               else: 
+                                 printPermissions(perms)
              else:
-                 print "[WARN] role not found for rolemapping:" + role
+                 print("[WARN] role not found for rolemapping:" + role)
 
 EOF
 
