@@ -1,20 +1,20 @@
-#!/bin/bash
+#!/bin/bash 
 
 set -eo pipefail
 
 function usage() {
 cat << EOF
 
-Exports a given user's kibana objects from their unique
-kibana index and write the results to STDOUT as an Elasticsearch
-search response.
+Export a given user's kibana objects from their unique
+kibana index and write the results to STDOUT as a JSON array
+that can be imported using Kibana
 
 usage:
   $0 <username> [objects]
 
-  username   the user's name or '\$\$kibana' if it should retrieve
+  username   The user's name or '\$\$kibana' if it should retrieve
              the '.kibana' objects
-  objects    a comma delimited list of objects (Defaults: visualization,dashboard,search)
+  objects    a comma delimited list of objects (Defaults: index-pattern,visualization,dashboard,search)
 
 EOF
 exit "1"
@@ -29,13 +29,17 @@ fi
 
 pwd=$(dirname $0)
 username=$1
-OBJECTS=${2:-visualization,dashboard,search}
+OBJECTS=${2:-index-pattern,visualization,dashboard,search}
+OBJECTS=$(echo $OBJECTS | sed "s/,/','/g")
 kibindex=$(${pwd}/kibana-index-name ${username})
 
 if [ "$username" == '$$kibana' ] ; then
     kibindex=.kibana
 fi
 
-query="${kibindex}/${OBJECTS}/_search?pretty"
+query="${kibindex}/doc/_search"
+filter=$(echo "{'query':{'terms':{'type':['$OBJECTS']}}}" | sed "s/'/\"/g")
 
-oc -n ${LOGGING_NS} exec -c elasticsearch $pod -- es_util --query=${query}
+
+result=$(oc -n ${LOGGING_NS} exec -c elasticsearch $pod -- es_util --query=${query} -d ${filter} 2>&1)
+echo $result | jq '[.hits.hits[] |{_id: (.["_id"] | split(":")[1]),_type:.["_source"]["type"], _source:._source[._source.type]} ]'

@@ -5,14 +5,14 @@ set -eo pipefail
 function usage() {
 cat << EOF
 
-Import kibana objects to the kibana index found in the first entry of
-a search response exported by 'export-kibana-objects'. NOTE: This script
+Import kibana objects to the kibana index for the given user. NOTE: This script
 overwrites/updates any objects of the same type and id
 
 usage:
-  $0 <objects_json>
+  $0 <username> <objects_json>
 
-  objects_json   A search response JSON from the export script
+  username       The username from which to determine the kibana index
+  objects_json   An exported JSON from the export script or Kibana
 
 EOF
 exit "1"
@@ -26,31 +26,30 @@ fi
 
 
 pwd=$(dirname $0)
-file=$1
-kibindex=$(
-        cat "$file" | python -c '
-import sys
-import json
-obj = json.load(sys.stdin)
-if obj["hits"]["total"] == 0:
-    sys.stdout.write("")
-sys.stdout.write(obj["hits"]["hits"][0]["_index"])
-'
-)
+username=$1
+file=$2
+kibindex=$(${pwd}/kibana-index-name ${username})
+
+if [ "$username" == '$$kibana' ] ; then
+    kibindex=.kibana
+fi
+
 query="${kibindex}/_bulk"
 response=$({
         cat "$file" | python -c '
 import sys
 import json
 obj = json.load(sys.stdin)
-for doc in obj["hits"]["hits"]:
-  hdr = {"index":{"_type":doc["_type"],"_id":doc["_id"]}}
+for doc in obj:
+  hdr = {"index":{"_type":"doc", "_id": doc["_type"]+":"+doc["_id"]}}
   json.dump(hdr, sys.stdout)
   sys.stdout.write("\n")
-  json.dump(doc["_source"], sys.stdout)
+  line = {"type": doc["_type"], }
+  line[doc["_type"]] = doc["_source"]
+  json.dump(line, sys.stdout)
   sys.stdout.write("\n")
 '
-} | oc -n ${LOGGING_NS} exec -i -c elasticsearch $pod -- es_util --query="${query}" -H "Content-type: application/json" -XPOST --data-binary @-
+} | oc -n ${LOGGING_NS} exec -i -c elasticsearch $pod -- es_util --query="${query}" -XPOST --data-binary @-
 )
 
 echo $response | python -c '
