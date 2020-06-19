@@ -1,11 +1,11 @@
 #!/bin/bash
 
 source env-prep
-echo "DCs"
+echo "Deployments"
 echo "----"
-oc get dc -n $LOGGING_NS -o yaml | grep image: | sort | uniq
+oc get deployments -n $LOGGING_NS -o yaml | grep image: | sort | uniq
 
-echo "DSs"
+echo "Daemonsets"
 echo "----"
 oc get ds -n $LOGGING_NS -o yaml | grep image: | sort | uniq
 

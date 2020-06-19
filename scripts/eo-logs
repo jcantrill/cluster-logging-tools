@@ -1,0 +1,2 @@
+#!/bin/bash
+oc -n openshift-operators-redhat logs deployment/elasticsearch-operator $@

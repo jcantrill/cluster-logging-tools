@@ -1,0 +1,2 @@
+#!/bin/bash
+oc -n openshift-logging logs deployment/cluster-logging-operator $@
