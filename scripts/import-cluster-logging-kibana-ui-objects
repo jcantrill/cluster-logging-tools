@@ -1,0 +1,62 @@
+#!/bin/bash -e
+
+set -euo pipefail
+
+# if [ -n "${DEBUG:-}" -o $loglevelint = 7 ] ; then
+#     set -x
+#     curl_output() {
+#         python -mjson.tool
+#     }
+# else
+#     curl_output() {
+#         cat > /dev/null 2>&1
+#     }
+# fi
+
+function usage() {
+    echo
+    echo Usage: $0 user-name
+    echo The kibana index for the given user must already exist
+    echo And assumes Elasticsearch is configured to have a unique
+    echo Kibana index for each user.
+    echo
+}
+if [ -z "${1:-}" ] ; then
+    usage
+    exit 1
+fi
+IMPORT_FILE="../files/user-kibana-objects.json"
+
+username=$1
+if [ "$username" == "admin" ] ; then
+  echo Populating admin templates for 'admin' tenant
+  username=admin
+  IMPORT_FILE="$IMPORT_FILE ../files/admin-kibana-objects.json"
+fi
+kibindex=$( ./kibana-index-name "$username" )
+
+resp_code=$( ./es-query "$kibindex" \
+                  --request HEAD --head --output /dev/null \
+                  -w '%{response_code}' )
+
+if [ "$resp_code" != 200 ] ; then
+    echo Could not find kibana index \"$kibindex\" for user \"$1\": $resp_code
+    exit 1
+fi
+
+echo Adding Kibana dashboards and other UI objects for user \"$1\" index \"$kibindex\"
+for f in $IMPORT_FILE; do
+    targetName=/tmp/$(basename $f)
+    ip_uuid=$(uuidgen)
+    search_uuid=$(uuidgen)
+    search_uuid_2=$(uuidgen)
+    vis_1_uuid=$(uuidgen)
+    vis_2_uuid=$(uuidgen)
+    sed "s/\$OBJECT_UUID/$ip_uuid/g" $f > $targetName
+    sed -i "s/\$SEARCH_UUID/$search_uuid/g" $targetName
+    sed -i "s/\$SEARCH_UUID_2/$search_uuid_2/g" $targetName
+    sed -i "s/\$VIS_1_UUID/$vis_1_uuid/g" $targetName
+    sed -i "s/\$VIS_2_UUID/$vis_2_uuid/g" $targetName
+    sed -i "s/\$DASHBOARD_UID/$(uuidgen)/g" $targetName
+    ./import-kibana-objects $username $targetName 
+done
