@@ -7,8 +7,8 @@ source env-prep
 
 TIMEOUT=${1:-1} #1 sec
 
-endpoints=($(oc -n ${LOGGING_NS} get endpoints logging-es-cluster -o jsonpath={.subsets[*].addresses[*].ip}))
-pods=($(oc -n ${LOGGING_NS} get pods -l component=es -o jsonpath={.items[*].metadata.name}))
+endpoints=($(oc -n ${LOGGING_NS} get endpoints elasticsearch-cluster -o jsonpath={.subsets[*].addresses[*].ip}))
+pods=($(oc -n ${LOGGING_NS} get pods -l component=elasticsearch -o jsonpath={.items[*].metadata.name}))
 if [ ${#endpoints[@]} -ne ${#pods[@]} ] ; then
   echo "[WARN] The number of service endpoints: '${#endpoints[@]}' is different then the number of pods: '${#pods[@]}'"
 fi

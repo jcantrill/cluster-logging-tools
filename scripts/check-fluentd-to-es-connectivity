@@ -5,7 +5,7 @@
 
 source env-prep
 
-service=${1:-logging-es}
+service=${1:-elasticsearch}
 pods=($(oc -n ${LOGGING_NS} get pods -l component=fluentd -o jsonpath={.items[*].metadata.name}))
 attempts=${2:-5}
 
@@ -18,9 +18,10 @@ for p in ${pods[@]}; do
     result=$(oc -n ${LOGGING_NS} exec ${p} -- curl -sS -o /dev/null \
         -w "%{time_connect}\t %{time_namelookup}\t %{time_connect}\t %{time_appconnect}\t %{time_pretransfer}\t %{time_redirect}\t %{time_starttransfer}" \
          https://${service}:9200 \
-        --cacert /etc/fluent/keys/ca \
-        --cert /etc/fluent/keys/cert \
-        --key /etc/fluent/keys/key)
+        --cacert /etc/fluent/keys/ca-bundle.crt \
+        --cert /etc/fluent/keys/tls.crt \
+        --key /etc/fluent/keys/tls.key \
+        ) \
     printf "%8s %14s %11s %13s %14s %11s %16s\n" $result
   done
 done

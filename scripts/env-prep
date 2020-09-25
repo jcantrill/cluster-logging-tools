@@ -12,7 +12,7 @@ fi
 
 export LOGGING_NS=${LOGGING_NS:-openshift-logging}
 if [ -z "${pod:-}" ] ; then
-  pod=$(oc -n $LOGGING_NS get pod -l component=elasticsearch -o jsonpath={.items[0].metadata.name})
+  pod=$(oc -n $LOGGING_NS get pod -l component=elasticsearch -o jsonpath={.items[0].metadata.name} --ignore-not-found)
   if [ "$?" != "0" ] ; then
     echo "Running 'oc -n $LOGGING_NS get pod -l component=elasticsearch' failed, possibly due to the" >&2
     echo "namespace being wrong. Look into 'env-prep' file to see how to override that." >&2
