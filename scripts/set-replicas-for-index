@@ -1,0 +1,13 @@
+#!/bin/bash
+# This script updates the given index to have the given replicas
+source env-prep
+pwd=$(dirname $0)
+cmd="$pwd/es-query"
+
+index=$1
+replicas=$2
+result=$($cmd $index/_settings -v -XPUT -d "{\"index\":{\"number_of_replicas\":$replicas}}")
+if [ "$?" != "0" ] || [ ! $(echo $result | grep "acknowledged\":true") ] ; then
+  echo "Index replica update failed failed: $result"
+  exit 1
+fi

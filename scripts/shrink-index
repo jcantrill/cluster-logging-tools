@@ -1,0 +1,103 @@
+#!/bin/bash -e
+# This script will shrink an index to fewer primary shards and 1 replica
+# based on https://www.elastic.co/guide/en/elasticsearch/reference/5.6/indices-shrink-index.html
+
+MAX_WAIT_START=${MAX_WAIT_START:-120}
+pwd=$(dirname $0)
+cmd="$pwd/es-query"
+index=$1
+
+max_divisor(){
+  local number=$1
+  local possible=$(bc <<< "scale=0; sqrt($number)")
+  local max=2
+  local i=1
+  for d in 2 3 5 7 11 13 ; do
+    if [ $i -gt $possible ] ; then
+      break
+    fi
+    value=$(bc <<< "scale=1; $number / $d")
+    if [ "$(echo $value | cut -d '.' -f2)" == "0" ]; then
+      max=$d
+    fi
+    i=$(($i+1))
+  done
+  echo $max
+}
+
+is_prime(){
+  local number=$1
+  local i=2
+  local flag=0 
+  while test $i -le `expr $number / 2`
+  do
+    if test `expr $number % $i` -eq 0 ; then
+     flag=1
+    fi
+    i=`expr $i + 1`
+  done
+  if test $flag -eq 1 ; then
+    echo 1
+    return
+  fi
+  echo 0
+}
+
+node=$($cmd _nodes/stats | jq -r '.nodes | map(.)|sort_by(.jvm.mem.heap_used_percent)|last|.name')
+
+echo "Preping to shrink: $index"
+result=$($cmd $index/_settings -XPUT -d "{\"settings\":{\"index.routing.allocation.require._name\":\"$node\",\"index.blocks.write\":\"true\"}}")
+if [ "$?" != "0" ] || [ ! $(echo $result | grep "acknowledged\":true") ] ; then
+  echo "Index prep failed: $result"
+  exit 1
+fi
+
+source_shards=$($cmd _cluster/health/$index | jq -r '.active_primary_shards')
+if [ "$?" != "0" ] ; then
+  echo "Error trying to get the current number of shards: $result"
+  exit 1
+fi
+shards=1
+if [ "$(is_prime $source_shards)" == "1" ] ; then
+  divisor=$(max_divisor $source_shards)
+  shards=$(bc <<< "scale=0; $source_shards / $divisor")
+fi
+
+aliases=app
+if [[ $index == .operation* ]] ; then
+  aliases=infra
+fi
+
+replicas=1
+echo "Shrinking $index to $shards primary / $replicas replicas"
+new_index="$(echo $index | cut -d '.' -f 1-3).ri.$(echo $index | cut -d '.' -f 4-6)"
+result=$($cmd $index/_shrink/$new_index -d "{\"settings\":{\"index\":{\"number_of_shards\":$shards,\"number_of_replicas\":$replicas},\"aliases\":{\"$aliases\":{}}}}")
+if [ "$?" != "0" ] || [ ! $(echo $result | grep "acknowledged\":true") ] ; then
+  echo "Shrink failed: $result"
+  exit 1
+fi
+
+echo "Waiting for index to be atleast yellow..."
+for i in $(seq 1 $MAX_WAIT_START) ; do
+  result=$($cmd _cluster/health/$new_index | jq -r '.status')
+  if [ "$?" != "0" ] ; then
+    echo "Error trying to monitor shrink operation: $result"
+    exit 1
+  fi
+  if [ "$result" == "red" ] ; then
+    sleep 1
+  else
+    echo "Index started"
+    break
+  fi
+done
+if [ "$i" == "$MAX_WAIT_START" ] ; then
+  echo "Timed out waiting for the index to be atleast yellow.  You will have to manually remove the original index"
+  exit 1
+fi
+
+result=$($cmd $index -XDELETE)
+if [ "$?" != "0" ] || [ ! $(echo $result | grep "acknowledged\":true") ] ; then
+  echo "Removal of old index failed: $result"
+  exit 1
+fi

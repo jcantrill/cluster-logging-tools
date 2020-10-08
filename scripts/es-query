@@ -1,0 +1,8 @@
+#!/bin/bash -e
+
+source env-prep
+
+query="$1"
+shift 1
+
+oc exec -n $LOGGING_NS -c elasticsearch $pod -- es_util --query="${query}" -H"Content-Type:application/json" $@
