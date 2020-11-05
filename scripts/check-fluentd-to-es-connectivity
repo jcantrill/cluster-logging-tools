@@ -20,8 +20,7 @@ for p in ${pods[@]}; do
          https://${service}:9200 \
         --cacert /etc/fluent/keys/ca-bundle.crt \
         --cert /etc/fluent/keys/tls.crt \
-        --key /etc/fluent/keys/tls.key \
-        ) \
+        --key /etc/fluent/keys/tls.key)
     printf "%8s %14s %11s %13s %14s %11s %16s\n" $result
   done
 done
