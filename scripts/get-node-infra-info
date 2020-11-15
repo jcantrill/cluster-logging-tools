@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd $(dirname "${BASH_SOURCE[0]}")
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 echo "node                                        instance type"

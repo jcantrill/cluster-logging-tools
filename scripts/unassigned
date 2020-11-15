@@ -1,5 +1,6 @@
 #!/bin/bash
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 oc exec -c elasticsearch -n $LOGGING_NS $pod -- es_util --query=_cat/shards?h=index,shard,prirep,state,unassigned.reason| grep UNASSIGNED

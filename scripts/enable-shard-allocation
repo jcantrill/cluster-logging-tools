@@ -1,4 +1,5 @@
 #!/bin/bash
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 enable=${1:-"all"} #or none
 PERSIST=${PERSIST:-"transient"}

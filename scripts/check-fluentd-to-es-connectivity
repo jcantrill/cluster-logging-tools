@@ -3,6 +3,7 @@
 # Checks the connectivity between Fluentd and the Elasticsearch cluster
 # of the cluster service
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 service=${1:-elasticsearch}

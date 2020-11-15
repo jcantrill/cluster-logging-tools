@@ -4,6 +4,7 @@
 # must have access to logging project.  The inputs are:
 #   pod   An Elasticsearch pod name
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 roles=$(oc -n $LOGGING_NS exec -c elasticsearch $pod -- es_acl get --doc=roles)

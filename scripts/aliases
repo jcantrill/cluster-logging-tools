@@ -1,5 +1,6 @@
 #!/bin/bash -e
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 oc exec -n $LOGGING_NS -c elasticsearch $pod -- es_util --query=_cat/aliases?v

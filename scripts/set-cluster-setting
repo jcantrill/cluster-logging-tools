@@ -2,6 +2,7 @@
 
 ## https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-update-settings.html
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 PERSIST=${PERSIST:-"transient"}
 
