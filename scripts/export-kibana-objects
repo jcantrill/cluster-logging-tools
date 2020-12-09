@@ -20,6 +20,7 @@ EOF
 exit "1"
 }
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 if [ -z "${1:-}" ] ; then

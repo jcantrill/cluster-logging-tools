@@ -4,6 +4,7 @@
 #
 #  peg-index-to-node $pod $index $es_node
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 pod=$1

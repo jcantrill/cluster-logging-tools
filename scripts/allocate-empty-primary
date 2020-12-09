@@ -11,6 +11,7 @@
 # must have access to logging project.  The inputs are:
 #   pod   An Elasticsearch pod name
 #   node  (Optional) An node Elasticsearch cluster which should be any one of the DC's.
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 node=${1:-}

@@ -2,6 +2,7 @@
 
 ## https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-get-settings.html
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 oc exec -n $LOGGING_NS -c elasticsearch $pod -- es_util --query='_cluster/settings?include_defaults=true&pretty'

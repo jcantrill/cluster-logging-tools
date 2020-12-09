@@ -4,6 +4,7 @@
 # For more context see https://bugzilla.redhat.com/show_bug.cgi?id=1666141#c5
 # It requires jq and egrep to be available on the machine from which this script is run
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 oc exec -c elasticsearch -n $LOGGING_NS $pod -- es_util --query='_mapping?pretty&filter_path=**.mappings.*.properties' \

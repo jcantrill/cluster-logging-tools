@@ -3,6 +3,7 @@
 # Checks the connectivity between the Elasticsearch nodes based on the published endpoints
 # of the cluster service
 
+cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
 
 TIMEOUT=${1:-1} #1 sec
