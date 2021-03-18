@@ -39,4 +39,4 @@ echo $payload > $file
 es_util --query='_cluster/reroute?pretty' -XPOST -d @$file
 EOF
 
-oc exec -t -c elasticsearch $pod -- bash -c "node=${node} ${SCRIPT}"
+oc -n $LOGGING_NS exec -t -c elasticsearch $pod -- bash -c "node=${node} ${SCRIPT}"
