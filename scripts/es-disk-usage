@@ -3,6 +3,6 @@
 cd $(dirname "${BASH_SOURCE[0]}")
 cd $(dirname "${BASH_SOURCE[0]}")
 source env-prep
-for p in $(oc -n ${LOGGING_NS} get pods -o jsonpath={.items[*].metadata.name} -l component=es); do
+for p in $(oc -n ${LOGGING_NS} get pods -o jsonpath={.items[*].metadata.name} -l component=elasticsearch); do
   oc -n ${LOGGING_NS} exec -c elasticsearch $p -- df -h | grep -E "persistent|Mounted";
 done
