@@ -16,7 +16,7 @@ source env-prep
 
 node=${1:-}
 if [ -z "${node}" ] ; then
-  node=$(oc -n $LOGGING_NS get dc -l component=es -o jsonpath={.items[0].metadata.name})
+  node=$(oc -n $LOGGING_NS get dc -l component=elasticsearch -o jsonpath={.items[0].metadata.name})
 fi
 
 read -r -d '' SCRIPT << "EOF"
