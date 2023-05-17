@@ -1,0 +1,57 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd $(dirname "${BASH_SOURCE[0]}")
+
+user=${1:-}
+namespace=${2:-default}
+
+usage(){
+    echo
+    echo Usage:
+    echo   $0 username [namespace] 
+}
+
+if [ "$user" == "" ] ; then
+  usage
+  exit 1
+fi
+
+admintoken=$(oc whoami -t)
+ns=openshift-operators-redhat
+pod=$(oc get pods | grep elasticsearch-operator | cut -d ' ' -f1)
+container=elasticsearch-operator
+
+sar='{"kind":"SubjectAccessReview","apiVersion":"authorization.k8s.io/v1","spec":{"user":"$user","resourceAttributes":{"namespace":"$namespace","verb":"get","resource":"pods/log"}}}'
+sar=$(echo $sar|sed "s/\$user/$user/g")
+sar=$(echo $sar|sed "s/\$namespace/$namespace/g")
+
+
+cmd='curl -sk https://$KUBERNETES_PORT_443_TCP_ADDR/apis/authorization.k8s.io/v1/subjectaccessreviews'
+cmd="$cmd -H'Authorization: Bearer $admintoken' -H'Content-type:application/json' -XPOST -d'$sar'"
+
+
+resp=$(oc exec -c $container $pod -- bash -c "$cmd")
+if [ "$?" != "0" ] ; then
+  echo "Error: $respo"
+  exit 1
+fi
+
+if [ "$(echo $resp | jq '.status.allowed')" == "true" ] ; then
+  echo $user allowed: yes
+  echo reason: "$(echo $resp | jq '.status.reason')"
+  echo namespace: $namespace
+  if [ $namespace == "default" ] ; then
+    echo  "  Note: 'default' implies read logs in all namespaces as a cluster-admin"
+  fi
+  exit 0
+fi
+
+echo $user allowed: no
+echo namespace: $namespace
+if [ $namespace == "default" ] ; then
+  echo  "  Note: 'default' implies read logs in all namespaces as a cluster-admin"
+fi
+exit 1
+
