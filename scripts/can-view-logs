@@ -20,7 +20,7 @@ fi
 
 admintoken=$(oc whoami -t)
 ns=openshift-operators-redhat
-pod=$(oc get pods | grep elasticsearch-operator | cut -d ' ' -f1)
+pod=$(oc -n $ns get pods | grep elasticsearch-operator | cut -d ' ' -f1)
 container=elasticsearch-operator
 
 sar='{"kind":"SubjectAccessReview","apiVersion":"authorization.k8s.io/v1","spec":{"user":"$user","resourceAttributes":{"namespace":"$namespace","verb":"get","resource":"pods/log"}}}'
@@ -32,7 +32,7 @@ cmd='curl -sk https://$KUBERNETES_PORT_443_TCP_ADDR/apis/authorization.k8s.io/v1
 cmd="$cmd -H'Authorization: Bearer $admintoken' -H'Content-type:application/json' -XPOST -d'$sar'"
 
 
-resp=$(oc exec -c $container $pod -- bash -c "$cmd")
+resp=$(oc -n $ns exec -c $container $pod -- bash -c "$cmd")
 if [ "$?" != "0" ] ; then
   echo "Error: $respo"
   exit 1
